@@ -1,0 +1,85 @@
+---
+title: "Create and Update Data in an Excel File with Hyperlinks"
+author: "Geethika Wijewardena"
+date: "2 October 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo=TRUE, include= TRUE, warning = FALSE, message = FALSE)
+library(gapminder)
+library(dplyr)
+library(openxlsx)
+
+```
+
+### 1. Create excel reports with hyperlinks to external files
+#### Problem
+How do we create hyperlinks to external files in an excel file through R?
+
+#### Solution
+Hyperlinks in Excel files can be created as other formulas. Various scenarios of creating hyperlinks using the 'openxlsx' package can be found at https://rdrr.io/cran/openxlsx/man/makeHyperlinkString.html.
+
+Here I present a simple scenario, where the name of the file and the link are embeded in two adjecent columns in the same worksheet named 'Countries'. I use the 'gapminder' dataset. I have generated a set of PDF files containing data on each country. 
+In the following code snippet, I create a master table which includes countries and the name of their PDF file.
+
+```{r create master table }
+# Create Master table
+country_lst <- unique(gapminder$country)
+filename_lst <- paste0(country_lst, ".pdf")
+
+df_master <- data.frame(country_lst, stringsAsFactors = F)
+df_master <- cbind(df_master, filename_lst)
+names(df_master) <- c("Country", "File_Name")
+head(df_master)
+```
+
+Now I create a workbook, write the master table and add hyperlinks. Here my linked external files are in the same folder as the workbook. 
+
+```{r create workbook, results="hide"}
+
+# Create an excel workbook and write data
+wb <- createWorkbook()
+addWorksheet(wb, "Countries")
+writeData(wb,sheet = "Countries", x = df_master)
+
+# Add hyperlinks to filenames
+for(i in 2:length(country_lst)) {
+  formula <- paste0('HYPERLINK(B',i, ', "Link to File")')
+  writeFormula(wb, sheet ="Countries", startRow = i, startCol = 3
+ , x = formula)
+}
+
+# Save the workbook
+saveWorkbook(wb, "Gapminder_Countries.xlsx", overwrite = T)
+```
+
+### 2. Update excel file with hyperlinks without touching the existing data
+#### Problem
+Forget about the above section, where I created hyperlinks. Now I have an excel file with hyperlinks to external files. Now I need to do some data manipulation and add a new column to this file. If I read, carryout the data manipulation and write to a new file without configuring the hyperlinks as mentioned above, I will loose the connection to the external files. Hence, how can I write only the new columns to the existing file?
+
+#### Solution
+We can do the data manipulation in R and write only the new columns to the existing file by specifying the range.I use the output of the above section (Gapminder_Countries.xlsx) and add the 'Avg. change of life exp.' and 'Avg. change in population' over 50 years (1957 - 2007).
+
+```{r Calculate the Avg. change in life expectancy and population}
+
+dat <- gapminder %>% group_by(country) %>% summarise(avg_change_LE = round((max(lifeExp) - min(lifeExp))/50,1),
+                                                     avg_change_Pop = (max(pop) - min(pop))/50) 
+head(dat)
+```
+
+Now I write only the 'avg_change_LE' and 'avg_change_Pop' columns to the existing 'Gapminder_Countries.xlsx'. First a new dataframe is created only with the new columns. These columns are written in the same order as they are in the dataframe, i.e. data is not joined/merged using a common field. Therefore, data in our dataframe and the excel file need to follow the same order. Also makesure to specify the correct start column and row.
+
+```{r Write new columns to excel}
+# Create a dataframe of only the newly created columns
+dat_select <- dat%>% select(starts_with("avg"))
+
+# Load the excel file and write the data
+wb <- loadWorkbook("Gapminder_Countries.xlsx")
+
+writeData(wb, sheet = 1, dat_select, startCol = "D", startRow = 1, colNames = T)
+
+# Here I save the workbook with a different name
+saveWorkbook(wb, "Gapminder_Countries_addedcols.xlsx", overwrite = T)
+```
+
